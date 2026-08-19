@@ -2,6 +2,9 @@ version: '3.8'
 
 services:
   backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
     image: clusterzx/ts6-manager:backend
     container_name: ts6-backend
     restart: unless-stopped
@@ -32,6 +35,9 @@ services:
       - ts6-network
 
   sidecar:
+    build:
+      context: .
+      dockerfile: Dockerfile.sidecar
     image: clusterzx/ts6-manager:sidecar
     container_name: ts6-sidecar
     restart: unless-stopped
@@ -43,6 +49,9 @@ services:
       - ts6-network
 
   frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
     image: clusterzx/ts6-manager:frontend
     container_name: ts6-frontend
     restart: unless-stopped
