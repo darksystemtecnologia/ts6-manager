@@ -2,7 +2,7 @@
 FROM node:20-slim AS base
 RUN corepack enable && corepack prepare pnpm@9 --activate
 
-# Instalação das dependências do sistema: openssl, ffmpeg, python3, pip, nodejs, quickjs
+# Dependências essenciais para Prisma, FFmpeg e Python/yt-dlp
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       openssl \
@@ -10,25 +10,30 @@ RUN apt-get update && \
       python3 \
       python3-pip \
       ca-certificates \
-      quickjs \
     && python3 -m pip install --break-system-packages --no-cache-dir -U "yt-dlp[default]" yt-dlp-ejs \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Configuração global para o yt-dlp usar o Node.js como JS Runtime
+# Configuração global de JS Runtime para o yt-dlp sem caracteres extras
 RUN mkdir -p /etc/yt-dlp && echo "--js-runtimes node" > /etc/yt-dlp.conf
 
 WORKDIR /app
 
-# Build kit
+# Estágio de Build usando Cache do pnpm
 FROM base AS build
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+COPY packages/common/package.json ./packages/common/
+COPY packages/backend/package.json ./packages/backend/
+
+RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile
+
 COPY . .
-RUN pnpm install --no-frozen-lockfile
 RUN pnpm --filter @ts6/common run build
 RUN pnpm --filter @ts6/backend exec prisma generate
 RUN pnpm --filter @ts6/backend run build
 
-# Imagem final de Produção
+# Imagem de Produção Enxuta
 FROM base AS production
 ENV NODE_ENV=production
 WORKDIR /app
