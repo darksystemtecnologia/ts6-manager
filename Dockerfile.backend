@@ -1,65 +1,45 @@
-# syntax=docker/dockerfile:1.4
-FROM node:20-slim AS base
-RUN corepack enable && corepack prepare pnpm@9 --activate
-
-# Instalação de dependências essenciais, FFmpeg, Python/yt-dlp e QuickJS/Deno
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-      openssl \
-      ffmpeg \
-      python3 \
-      python3-pip \
-      ca-certificates \
-      curl \
-      unzip \
-      quickjs \
-    && python3 -m pip install --break-system-packages --no-cache-dir -U "yt-dlp[default]" yt-dlp-ejs \
-    && curl -fsSL https://deno.land/install.sh | sh \
-    && cp /root/.deno/bin/deno /usr/local/bin/deno \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
-
-# Configuração global do yt-dlp com sintaxe correta de runtimes JS
-RUN mkdir -p /etc/yt-dlp && \
-    printf "--js-runtimes\nnode\n--js-runtimes\ndeno\n--js-runtimes\nquickjs\n" > /etc/yt-dlp.conf && \
-    mkdir -p /root/.config/yt-dlp && \
-    printf "--js-runtimes\nnode\n--js-runtimes\ndeno\n--js-runtimes\nquickjs\n" > /root/.config/yt-dlp/config
+# ==========================================
+# 1. Estágio de Compilação (Builder)
+# ==========================================
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Estágio de Build usando Cache do pnpm
-FROM base AS build
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
-COPY packages/common/package.json ./packages/common/
-COPY packages/backend/package.json ./packages/backend/
+# Instala apenas o necessário para compilar dependências nativas
+RUN apk add --no-cache python3 make g++
 
-RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
-    pnpm install --frozen-lockfile
+COPY package*.json ./
+RUN npm ci
 
 COPY . .
-RUN pnpm --filter @ts6/common run build
-RUN pnpm --filter @ts6/backend exec prisma generate
-RUN pnpm --filter @ts6/backend run build
+RUN npm run build
 
-# Imagem de Produção Final
-FROM base AS production
-ENV NODE_ENV=production
+# Modifica pacotes mantendo apenas o necessário para produção
+RUN npm prune --production
+
+# ==========================================
+# 2. Estágio Final (Imagem Leve para Produção)
+# ==========================================
+FROM node:20-alpine AS runner
+
 WORKDIR /app
 
-COPY --from=build /app/node_modules ./node_modules
-COPY --from=build /app/package.json ./package.json
-COPY --from=build /app/pnpm-workspace.yaml ./pnpm-workspace.yaml
-COPY --from=build /app/packages/common/dist ./packages/common/dist
-COPY --from=build /app/packages/common/package.json ./packages/common/package.json
-COPY --from=build /app/packages/backend/dist ./packages/backend/dist
-COPY --from=build /app/packages/backend/generated ./packages/backend/generated
-COPY --from=build /app/packages/backend/prisma ./packages/backend/prisma
-COPY --from=build /app/packages/backend/package.json ./packages/backend/package.json
-COPY --from=build /app/packages/backend/node_modules ./packages/backend/node_modules
+# Instala utilitários leves em uma única camada limpa
+RUN apk add --no-cache \
+    ffmpeg \
+    python3 \
+    py3-pip \
+    deno \
+    quickjs \
+    && pip install --no-cache-dir --break-system-packages yt-dlp
 
-WORKDIR /app/packages/backend
-RUN mkdir -p data /data/music
+ENV NODE_ENV=production
+
+# Copia apenas os artefatos compilados e os node_modules enxutos
+COPY --from=builder /app/package*.json ./
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/dist ./dist
 
 EXPOSE 3001
-ENV SIDECAR_URL=http://ts6-sidecar:9800
-CMD ["sh", "-c", "npx prisma db push --skip-generate && npx prisma db seed || true && node dist/index.js"]
+
+CMD ["node", "dist/main.js"]
