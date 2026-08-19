@@ -3,16 +3,19 @@ FROM node:20-slim AS base
 RUN corepack enable && corepack prepare pnpm@9 --activate
 WORKDIR /app
 
+# Copy everything at once to avoid BuildKit ordering bug on Windows
 FROM base AS build
 COPY . .
 RUN pnpm install --no-frozen-lockfile
 RUN pnpm --filter @ts6/common run build
 RUN pnpm --filter @ts6/frontend run build
 
+# Production: serve with nginx
 FROM nginx:alpine AS production
 
 COPY --from=build /app/packages/frontend/dist /usr/share/nginx/html
 
+# Nginx config for SPA routing + API proxy
 RUN printf 'server {\n\
     listen 80;\n\
     server_name _;\n\
