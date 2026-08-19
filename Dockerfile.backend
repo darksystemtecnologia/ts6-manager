@@ -2,7 +2,7 @@
 FROM node:20-slim AS base
 RUN corepack enable && corepack prepare pnpm@9 --activate
 
-# 1. Instalar dependências leves do sistema + Baixar yt-dlp estático sem Python
+# 1. Dependências mínimas de runtime + yt-dlp standalone
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       openssl \
@@ -17,33 +17,32 @@ RUN apt-get update && \
 
 WORKDIR /app
 
-# 2. Estágio de Build
+# 2. Estágio de Build (Instala python temporariamente só para compilar pacotes C++ se necessário)
 FROM base AS build
+RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ && rm -rf /var/lib/apt/lists/*
+
 COPY . .
 RUN pnpm install --frozen-lockfile
 RUN pnpm --filter @ts6/common run build
 RUN pnpm --filter @ts6/backend exec prisma generate
 RUN pnpm --filter @ts6/backend run build
 
-# Isolar apenas as dependências de produção para a package backend
+# Isola apenas as dependências de produção
 RUN pnpm --filter @ts6/backend deploy --prod /prod/backend
 
-# 3. Estágio de Produção (Super leve)
+# 3. Estágio de Produção (Imagem final ultra leve)
 FROM base AS production
 ENV NODE_ENV=production
 WORKDIR /app/packages/backend
 
-# Copiar os arquivos isolados de produção
 COPY --from=build /prod/backend /app/packages/backend
-
-# Garantir arquivos compilados e gerados do Prisma/Common
 COPY --from=build /app/packages/common/dist /app/packages/common/dist
 COPY --from=build /app/packages/backend/dist /app/packages/backend/dist
 COPY --from=build /app/packages/backend/generated /app/packages/backend/generated
 
 RUN mkdir -p data /data/music && \
     mkdir -p /root/.config/yt-dlp && \
-    echo "--js-runtimes node" > /root/.config/yt-dlp/config
+    echo "--js-runtimes node --remote-components ejs:npm" > /root/.config/yt-dlp/config
 
 EXPOSE 3001
 ENV SIDECAR_URL=http://ts6-sidecar:9800
