@@ -2,8 +2,10 @@
 FROM node:20-slim AS base
 RUN corepack enable && corepack prepare pnpm@9 --activate
 
+# Argumento para forçar a atualização das dependências sem usar cache antigo
+ARG CACHEBURST=1
+
 # Install system deps: openssl (Prisma), ffmpeg (audio), python3+pip (yt-dlp)
-# Adicionado build-essential temporariamente para compilar dependências C do yt-dlp-ejs
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       openssl \
@@ -12,7 +14,7 @@ RUN apt-get update && \
       python3-pip \
       ca-certificates \
       build-essential \
-    && python3 -m pip install --break-system-packages --no-cache-dir -U "yt-dlp[default]" yt-dlp-ejs \
+    && python3 -m pip install --break-system-packages --no-cache-dir --upgrade "yt-dlp[default]" yt-dlp-ejs \
     && apt-get purge -y build-essential \
     && apt-get autoremove -y \
     && apt-get clean \
