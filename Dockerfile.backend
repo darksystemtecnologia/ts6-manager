@@ -1,11 +1,11 @@
 # ==========================================
 # Estágio 1: Builder (Compilação e Dependências)
 # ==========================================
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
-# Ativa e instala o pnpm via corepack
+# Ativa o pnpm
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
 # Instala ferramentas nativas de compilação exigidas por bibliotecas Node
@@ -14,7 +14,7 @@ RUN apk add --no-cache python3 make g++
 # Copia os arquivos de manifesto do projeto
 COPY package*.json pnpm-lock.yaml* ./
 
-# Instala as dependências usando pnpm (com fallback para npm se pnpm-lock não existir)
+# Instala as dependências
 RUN if [ -f pnpm-lock.yaml ]; then pnpm install --frozen-lockfile; \
     elif [ -f package-lock.json ]; then npm ci; \
     else npm install; fi
@@ -22,23 +22,23 @@ RUN if [ -f pnpm-lock.yaml ]; then pnpm install --frozen-lockfile; \
 # Copia todo o código-fonte restante
 COPY . .
 
-# Executa o build (agora o pnpm estará disponível no PATH)
+# Executa o build
 RUN npm run build
 
 
 # ==========================================
 # Estágio 2: Produção (Imagem Final)
 # ==========================================
-FROM node:20-alpine AS runner
+FROM node:22-alpine AS runner
 
 WORKDIR /app
 
 ENV NODE_ENV=production
 
-# Ativa o pnpm no estágio final também
+# Ativa o pnpm no estágio de execução
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
-# Copia arquivos de manifesto e instala apenas dependências de produção
+# Copia arquivos de manifesto e instala dependências de produção
 COPY package*.json pnpm-lock.yaml* ./
 RUN if [ -f pnpm-lock.yaml ]; then pnpm install --prod --frozen-lockfile; \
     elif [ -f package-lock.json ]; then npm ci --only=production; \
