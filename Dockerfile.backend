@@ -5,45 +5,50 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
+# Ativa e instala o pnpm via corepack
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
 # Instala ferramentas nativas de compilação exigidas por bibliotecas Node
 RUN apk add --no-cache python3 make g++
 
-# Copia os arquivos de manifesto de pacotes
-COPY package*.json ./
+# Copia os arquivos de manifesto do projeto
+COPY package*.json pnpm-lock.yaml* ./
 
-# Tenta usar 'npm ci' se o package-lock.json existir; 
-# caso contrário, faz o fallback para 'npm install'
-RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
+# Instala as dependências usando pnpm (com fallback para npm se pnpm-lock não existir)
+RUN if [ -f pnpm-lock.yaml ]; then pnpm install --frozen-lockfile; \
+    elif [ -f package-lock.json ]; then npm ci; \
+    else npm install; fi
 
 # Copia todo o código-fonte restante
 COPY . .
 
-# Executa o build (TypeScript -> JavaScript / Bundling)
+# Executa o build (agora o pnpm estará disponível no PATH)
 RUN npm run build
 
 
 # ==========================================
-# Estágio 2: Produção (Imagem Leve e Final)
+# Estágio 2: Produção (Imagem Final)
 # ==========================================
 FROM node:20-alpine AS runner
 
 WORKDIR /app
 
-# Define ambiente como produção
 ENV NODE_ENV=production
 
-# Copia manifestos e instala apenas dependências de produção
-COPY package*.json ./
-RUN if [ -f package-lock.json ]; then npm ci --only=production; else npm install --only=production; fi
+# Ativa o pnpm no estágio final também
+RUN corepack enable && corepack prepare pnpm@latest --activate
 
-# Copia os arquivos compilados do estágio de build
+# Copia arquivos de manifesto e instala apenas dependências de produção
+COPY package*.json pnpm-lock.yaml* ./
+RUN if [ -f pnpm-lock.yaml ]; then pnpm install --prod --frozen-lockfile; \
+    elif [ -f package-lock.json ]; then npm ci --only=production; \
+    else npm install --only=production; fi
+
+# Copia os artefatos gerados pelo build
 COPY --from=builder /app/dist ./dist
 
-# Garante permissões adequadas usando o usuário não-root nativo do Node/Alpine
 USER node
 
-# Exponha a porta da sua aplicação (ajuste se usar outra porta, ex: 8080 ou 3000)
 EXPOSE 3000
 
-# Comando para iniciar o backend em produção
 CMD ["node", "dist/main.js"]
