@@ -4,18 +4,11 @@ RUN corepack enable && corepack prepare pnpm@9 --activate
 WORKDIR /app
 
 FROM base AS build
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
-COPY packages/common/package.json ./packages/common/
-COPY packages/frontend/package.json ./packages/frontend/
-
-RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
-    pnpm install --frozen-lockfile
-
 COPY . .
+RUN pnpm install --no-frozen-lockfile
 RUN pnpm --filter @ts6/common run build
 RUN pnpm --filter @ts6/frontend run build
 
-# Produção estática leve via Nginx Alpine
 FROM nginx:alpine AS production
 
 COPY --from=build /app/packages/frontend/dist /usr/share/nginx/html
