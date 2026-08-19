@@ -11,8 +11,8 @@ RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
 # Instala ferramentas nativas e OpenSSL (exigido pelo Prisma Engine no Alpine)
 RUN apk add --no-cache python3 make g++ openssl
 
-# Copia manifestos de dependências da raiz e dos pacotes
-COPY package*.json pnpm-lock.yaml* ./
+# Copia manifestos de dependências da raiz e configurações de workspace
+COPY package*.json pnpm-lock.yaml* pnpm-workspace.yaml* ./
 COPY packages/backend/package.json ./packages/backend/
 
 # Instala todas as dependências (dev + prod)
@@ -24,8 +24,8 @@ COPY . .
 # Variável de ambiente fictícia para permitir o 'prisma generate' durante a compilação
 ENV DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy"
 
-# 1. Gera o cliente do Prisma apontando explicitamente para o schema
-RUN pnpm --filter @ts6/backend exec prisma generate --schema=packages/backend/prisma/schema.prisma
+# 1. Gera o cliente do Prisma usando npx para garantir a localização do binário
+RUN npx prisma generate --schema=packages/backend/prisma/schema.prisma
 
 # 2. Compila a aplicação backend
 RUN pnpm --filter @ts6/backend run build
@@ -47,7 +47,7 @@ RUN apk add --no-cache openssl
 RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
 
 # Copia manifestos de dependências
-COPY package*.json pnpm-lock.yaml* ./
+COPY package*.json pnpm-lock.yaml* pnpm-workspace.yaml* ./
 COPY packages/backend/package.json ./packages/backend/
 
 # Instala apenas dependências de produção
