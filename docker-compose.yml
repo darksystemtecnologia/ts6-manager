@@ -2,7 +2,9 @@ version: '3.8'
 
 services:
   backend:
-    image: clusterzx/ts6-manager:backend
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
     container_name: ts6-backend
     restart: unless-stopped
     environment:
