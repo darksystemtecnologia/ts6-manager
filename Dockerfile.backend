@@ -2,9 +2,10 @@
 FROM node:20-slim AS base
 RUN corepack enable && corepack prepare pnpm@9 --activate
 
-# 1. Dependências mínimas de runtime + yt-dlp standalone
+# 1. Dependências de runtime necessárias (incluindo python3) + yt-dlp
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
+      python3 \
       openssl \
       ffmpeg \
       ca-certificates \
@@ -17,34 +18,29 @@ RUN apt-get update && \
 
 WORKDIR /app
 
-# 2. Estágio de Build
+# 2. Estágio de Build (Instala ferramentas de compilação C++ se necessário)
 FROM base AS build
-RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends make g++ && rm -rf /var/lib/apt/lists/*
 
-# Copia todos os fontes do monorepo
+# Copia todo o monorepo
 COPY . .
 
-# Instala todas as dependências do monorepo sem abortar se o lockfile tiver pequena variação
+# Instala dependências
 RUN pnpm install
 
-# Compila o pacote compartilhado primeiro
+# Compila os pacotes na ordem correta
 RUN pnpm --filter @ts6/common run build
-
-# Gerar o Prisma ANTES do build do backend
 RUN pnpm --filter @ts6/backend exec prisma generate
-
-# Compila o backend
 RUN pnpm --filter @ts6/backend run build
 
-# 3. Estágio de Produção
-FROM base AS production
-ENV NODE_ENV=production
+# 3. Estágio Final
+FROM base AS runner
 WORKDIR /app
 
-# Copia todo o monorepo compilado e dependências preparadas do build
+# Copia o projeto construído
 COPY --from=build /app /app
 
-# Configura diretórios e yt-dlp
+# Cria diretórios de dados e config do yt-dlp
 RUN mkdir -p /app/packages/backend/data /data/music && \
     mkdir -p /root/.config/yt-dlp && \
     echo "--js-runtimes node --remote-components ejs:npm" > /root/.config/yt-dlp/config
@@ -52,7 +48,5 @@ RUN mkdir -p /app/packages/backend/data /data/music && \
 WORKDIR /app/packages/backend
 
 EXPOSE 3001
-ENV SIDECAR_URL=http://ts6-sidecar:9800
 
-# Executa as migrations/seed e inicia a aplicação
 CMD ["sh", "-c", "npx prisma db push --skip-generate && (npx prisma db seed || true) && node dist/index.js"]
