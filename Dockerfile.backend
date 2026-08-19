@@ -20,6 +20,12 @@ RUN apt-get update && \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+# Configuração GLOBAL do yt-dlp para habilitar o Node.js como runtime JS para qualquer usuário
+RUN mkdir -p /etc/yt-dlp && \
+    echo "--js-runtimes node" > /etc/yt-dlp.conf && \
+    mkdir -p /root/.config/yt-dlp && \
+    echo "--js-runtimes node" > /root/.config/yt-dlp/config
+
 WORKDIR /app
 
 # Copy everything at once to avoid BuildKit ordering bug on Windows
@@ -47,9 +53,7 @@ COPY --from=build /app/packages/backend/package.json ./packages/backend/package.
 COPY --from=build /app/packages/backend/node_modules ./packages/backend/node_modules
 
 WORKDIR /app/packages/backend
-RUN mkdir -p data /data/music && \
-    mkdir -p /root/.config/yt-dlp && \
-    echo "--js-runtimes node" > /root/.config/yt-dlp/config
+RUN mkdir -p data /data/music
 
 EXPOSE 3001
 ENV SIDECAR_URL=http://ts6-sidecar:9800
