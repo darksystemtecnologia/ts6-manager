@@ -7,11 +7,24 @@ COPY packages/sidecar/main.go .
 RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /sidecar main.go
 
 FROM debian:bookworm-slim
+
+# 1. Instala FFmpeg, Python3, Node.js (necessário pro JS runtime) e certificados
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       ffmpeg \
       ca-certificates \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
+      python3 \
+      python3-pip \
+      nodejs \
+      curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# 2. Instala o yt-dlp atualizado com pacotes para JS (EJS)
+RUN python3 -m pip install --break-system-packages --no-cache-dir -U "yt-dlp[default]" yt-dlp-ejs
+
+# 3. Configura o yt-dlp para usar o Node.js como runtime padrão de JavaScript
+RUN mkdir -p /etc/yt-dlp && echo "--js-runtimes node" > /etc/yt-dlp.conf
+RUN mkdir -p /root/.config/yt-dlp && echo "--js-runtimes node" > /root/.config/yt-dlp/config
 
 COPY --from=build /sidecar /usr/local/bin/sidecar
 EXPOSE 9800
