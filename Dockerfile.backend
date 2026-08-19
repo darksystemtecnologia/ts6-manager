@@ -2,20 +2,13 @@
 FROM node:20-slim AS base
 RUN corepack enable && corepack prepare pnpm@9 --activate
 
-# Instalação limpa do QuickJS e ffmpeg
+# Apenas dependências básicas de runtime necessárias para a API Node/Prisma
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       openssl \
-      ffmpeg \
-      python3 \
-      python3-pip \
       ca-certificates \
-      quickjs \
-    && python3 -m pip install --break-system-packages --no-cache-dir -U "yt-dlp[default]" yt-dlp-ejs \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
-
-RUN mkdir -p /etc/yt-dlp && echo "--js-runtimes node, quickjs" > /etc/yt-dlp.conf
 
 WORKDIR /app
 
@@ -42,9 +35,7 @@ COPY --from=build /app/packages/backend/package.json ./packages/backend/package.
 COPY --from=build /app/packages/backend/node_modules ./packages/backend/node_modules
 
 WORKDIR /app/packages/backend
-RUN mkdir -p data /data/music && \
-    mkdir -p /root/.config/yt-dlp && \
-    echo "--js-runtimes node, quickjs" > /root/.config/yt-dlp/config
+RUN mkdir -p data /data/music
 
 EXPOSE 3001
 ENV SIDECAR_URL=http://ts6-sidecar:9800
