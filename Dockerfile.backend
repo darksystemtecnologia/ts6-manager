@@ -5,8 +5,8 @@ FROM node:22-alpine AS builder
 
 WORKDIR /app
 
-# Ativa o pnpm
-RUN corepack enable && corepack prepare pnpm@latest --activate
+# Pin do pnpm na versão 9 ou 10 estável para evitar incompatibilidades
+RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
 
 # Instala ferramentas nativas de compilação exigidas por bibliotecas Node
 RUN apk add --no-cache python3 make g++
@@ -14,16 +14,14 @@ RUN apk add --no-cache python3 make g++
 # Copia os arquivos de manifesto do projeto
 COPY package*.json pnpm-lock.yaml* ./
 
-# Instala as dependências
-RUN if [ -f pnpm-lock.yaml ]; then pnpm install --frozen-lockfile; \
-    elif [ -f package-lock.json ]; then npm ci; \
-    else npm install; fi
+# Instala todas as dependências (dev + prod)
+RUN pnpm install --frozen-lockfile
 
 # Copia todo o código-fonte restante
 COPY . .
 
-# Executa o build
-RUN npm run build
+# Executa o build usando pnpm diretamente
+RUN pnpm run build
 
 
 # ==========================================
@@ -36,13 +34,11 @@ WORKDIR /app
 ENV NODE_ENV=production
 
 # Ativa o pnpm no estágio de execução
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
 
-# Copia arquivos de manifesto e instala dependências de produção
+# Copia arquivos de manifesto e instala apenas dependências de produção
 COPY package*.json pnpm-lock.yaml* ./
-RUN if [ -f pnpm-lock.yaml ]; then pnpm install --prod --frozen-lockfile; \
-    elif [ -f package-lock.json ]; then npm ci --only=production; \
-    else npm install --only=production; fi
+RUN pnpm install --prod --frozen-lockfile
 
 # Copia os artefatos gerados pelo build
 COPY --from=builder /app/dist ./dist
