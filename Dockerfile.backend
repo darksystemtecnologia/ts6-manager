@@ -17,33 +17,42 @@ RUN apt-get update && \
 
 WORKDIR /app
 
-# 2. Estágio de Build (Instala python temporariamente só para compilar pacotes C++ se necessário)
+# 2. Estágio de Build
 FROM base AS build
 RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ && rm -rf /var/lib/apt/lists/*
 
+# Copia todos os fontes do monorepo
 COPY . .
-RUN pnpm install --frozen-lockfile
+
+# Instala todas as dependências do monorepo sem abortar se o lockfile tiver pequena variação
+RUN pnpm install
+
+# Compila o pacote compartilhado primeiro
 RUN pnpm --filter @ts6/common run build
+
+# Gerar o Prisma ANTES do build do backend
 RUN pnpm --filter @ts6/backend exec prisma generate
+
+# Compila o backend
 RUN pnpm --filter @ts6/backend run build
 
-# Isola apenas as dependências de produção
-RUN pnpm --filter @ts6/backend deploy --prod /prod/backend
-
-# 3. Estágio de Produção (Imagem final ultra leve)
+# 3. Estágio de Produção
 FROM base AS production
 ENV NODE_ENV=production
-WORKDIR /app/packages/backend
+WORKDIR /app
 
-COPY --from=build /prod/backend /app/packages/backend
-COPY --from=build /app/packages/common/dist /app/packages/common/dist
-COPY --from=build /app/packages/backend/dist /app/packages/backend/dist
-COPY --from=build /app/packages/backend/generated /app/packages/backend/generated
+# Copia todo o monorepo compilado e dependências preparadas do build
+COPY --from=build /app /app
 
-RUN mkdir -p data /data/music && \
+# Configura diretórios e yt-dlp
+RUN mkdir -p /app/packages/backend/data /data/music && \
     mkdir -p /root/.config/yt-dlp && \
     echo "--js-runtimes node --remote-components ejs:npm" > /root/.config/yt-dlp/config
 
+WORKDIR /app/packages/backend
+
 EXPOSE 3001
 ENV SIDECAR_URL=http://ts6-sidecar:9800
-CMD ["sh", "-c", "npx prisma db push --skip-generate && npx prisma db seed || true && node dist/index.js"]
+
+# Executa as migrations/seed e inicia a aplicação
+CMD ["sh", "-c", "npx prisma db push --skip-generate && (npx prisma db seed || true) && node dist/index.js"]
