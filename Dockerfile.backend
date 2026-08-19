@@ -1,50 +1,48 @@
 # ==========================================
-# Estágio 1: Builder (Compilação e Dependências)
+# Estágio 1: Builder
 # ==========================================
 FROM node:22-alpine AS builder
 
 WORKDIR /app
 
-# Pin do pnpm na versão 9 ou 10 estável para evitar incompatibilidades
 RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
-
-# Instala ferramentas nativas de compilação exigidas por bibliotecas Node
 RUN apk add --no-cache python3 make g++
 
-# Copia os arquivos de manifesto do projeto
 COPY package*.json pnpm-lock.yaml* ./
+COPY packages/backend/package.json ./packages/backend/
 
-# Instala todas as dependências (dev + prod)
 RUN pnpm install --frozen-lockfile
 
-# Copia todo o código-fonte restante
 COPY . .
 
-# Executa o build usando pnpm diretamente
-RUN pnpm run build
+# 1. Gera o cliente Prisma antes do build
+RUN pnpm --filter @ts6/backend exec prisma generate
+
+# 2. Executa o build do backend
+RUN pnpm --filter @ts6/backend run build
 
 
 # ==========================================
-# Estágio 2: Produção (Imagem Final)
+# Estágio 2: Produção
 # ==========================================
 FROM node:22-alpine AS runner
 
 WORKDIR /app
-
 ENV NODE_ENV=production
 
-# Ativa o pnpm no estágio de execução
 RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
 
-# Copia arquivos de manifesto e instala apenas dependências de produção
 COPY package*.json pnpm-lock.yaml* ./
+COPY packages/backend/package.json ./packages/backend/
+
 RUN pnpm install --prod --frozen-lockfile
 
-# Copia os artefatos gerados pelo build
-COPY --from=builder /app/dist ./dist
+# Copia os artefatos compilados e o Prisma gerado
+COPY --from=builder /app/packages/backend/dist ./packages/backend/dist
+COPY --from=builder /app/packages/backend/generated ./packages/backend/generated
 
 USER node
 
 EXPOSE 3000
 
-CMD ["node", "dist/main.js"]
+CMD ["node", "packages/backend/dist/main.js"]
