@@ -2,16 +2,25 @@
 FROM node:20-slim AS base
 RUN corepack enable && corepack prepare pnpm@9 --activate
 
-# Apenas dependências básicas de runtime necessárias para a API Node/Prisma
+# Instalação das dependências do sistema: openssl, ffmpeg, python3, pip, nodejs, quickjs
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       openssl \
+      ffmpeg \
+      python3 \
+      python3-pip \
       ca-certificates \
+      quickjs \
+    && python3 -m pip install --break-system-packages --no-cache-dir -U "yt-dlp[default]" yt-dlp-ejs \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+# Configuração global para o yt-dlp usar o Node.js como JS Runtime
+RUN mkdir -p /etc/yt-dlp && echo "--js-runtimes node" > /etc/yt-dlp.conf
+
 WORKDIR /app
 
+# Build kit
 FROM base AS build
 COPY . .
 RUN pnpm install --no-frozen-lockfile
@@ -19,6 +28,7 @@ RUN pnpm --filter @ts6/common run build
 RUN pnpm --filter @ts6/backend exec prisma generate
 RUN pnpm --filter @ts6/backend run build
 
+# Imagem final de Produção
 FROM base AS production
 ENV NODE_ENV=production
 WORKDIR /app
@@ -35,7 +45,9 @@ COPY --from=build /app/packages/backend/package.json ./packages/backend/package.
 COPY --from=build /app/packages/backend/node_modules ./packages/backend/node_modules
 
 WORKDIR /app/packages/backend
-RUN mkdir -p data /data/music
+RUN mkdir -p data /data/music && \
+    mkdir -p /root/.config/yt-dlp && \
+    echo "--js-runtimes node" > /root/.config/yt-dlp/config
 
 EXPOSE 3001
 ENV SIDECAR_URL=http://ts6-sidecar:9800
