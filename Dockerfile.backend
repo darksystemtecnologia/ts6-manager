@@ -1,45 +1,22 @@
-# ==========================================
-# 1. Estágio de Compilação (Builder)
-# ==========================================
 FROM node:20-alpine AS builder
-
 WORKDIR /app
-
-# Instala apenas o necessário para compilar dependências nativas
 RUN apk add --no-cache python3 make g++
-
 COPY package*.json ./
 RUN npm ci
-
 COPY . .
 RUN npm run build
-
-# Modifica pacotes mantendo apenas o necessário para produção
 RUN npm prune --production
 
-# ==========================================
-# 2. Estágio Final (Imagem Leve para Produção)
-# ==========================================
 FROM node:20-alpine AS runner
-
 WORKDIR /app
-
-# Instala utilitários leves em uma única camada limpa
-RUN apk add --no-cache \
-    ffmpeg \
-    python3 \
-    py3-pip \
-    deno \
-    quickjs \
-    && pip install --no-cache-dir --break-system-packages yt-dlp
+RUN apk add --no-cache ffmpeg python3 deno quickjs curl && \
+    curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp && \
+    chmod a+rx /usr/local/bin/yt-dlp
 
 ENV NODE_ENV=production
-
-# Copia apenas os artefatos compilados e os node_modules enxutos
 COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 
 EXPOSE 3001
-
 CMD ["node", "dist/main.js"]
