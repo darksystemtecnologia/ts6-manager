@@ -1,22 +1,49 @@
+# ==========================================
+# Estágio 1: Builder (Compilação e Dependências)
+# ==========================================
 FROM node:20-alpine AS builder
+
 WORKDIR /app
+
+# Instala ferramentas nativas de compilação exigidas por bibliotecas Node
 RUN apk add --no-cache python3 make g++
+
+# Copia os arquivos de manifesto de pacotes
 COPY package*.json ./
-RUN npm ci
+
+# Tenta usar 'npm ci' se o package-lock.json existir; 
+# caso contrário, faz o fallback para 'npm install'
+RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
+
+# Copia todo o código-fonte restante
 COPY . .
+
+# Executa o build (TypeScript -> JavaScript / Bundling)
 RUN npm run build
-RUN npm prune --production
 
+
+# ==========================================
+# Estágio 2: Produção (Imagem Leve e Final)
+# ==========================================
 FROM node:20-alpine AS runner
-WORKDIR /app
-RUN apk add --no-cache ffmpeg python3 deno quickjs curl && \
-    curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp && \
-    chmod a+rx /usr/local/bin/yt-dlp
 
+WORKDIR /app
+
+# Define ambiente como produção
 ENV NODE_ENV=production
-COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/node_modules ./node_modules
+
+# Copia manifestos e instala apenas dependências de produção
+COPY package*.json ./
+RUN if [ -f package-lock.json ]; then npm ci --only=production; else npm install --only=production; fi
+
+# Copia os arquivos compilados do estágio de build
 COPY --from=builder /app/dist ./dist
 
-EXPOSE 3001
+# Garante permissões adequadas usando o usuário não-root nativo do Node/Alpine
+USER node
+
+# Exponha a porta da sua aplicação (ajuste se usar outra porta, ex: 8080 ou 3000)
+EXPOSE 3000
+
+# Comando para iniciar o backend em produção
 CMD ["node", "dist/main.js"]
