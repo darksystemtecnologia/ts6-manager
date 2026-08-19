@@ -1,22 +1,16 @@
-# Estágio de Build para instalar dependências e yt-dlp
-FROM python:3.11-alpine AS builder
+# syntax=docker/dockerfile:1.4
+FROM golang:1.22-alpine AS build
+WORKDIR /src
+RUN apk add --no-cache git
+COPY packages/sidecar/go.mod packages/sidecar/go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
+COPY packages/sidecar/main.go .
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /sidecar main.go
 
-# Instala ferramentas de download
-RUN apk add --no-舆-cache curl
-
-# Baixa a versão mais recente do yt-dlp
-RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp && \
-    chmod a+rx /usr/local/bin/yt-dlp
-
-# Estágio Final Minimalista
-FROM python:3.11-alpine
-
-# Instala apenas o ffmpeg necessário
-RUN apk add --no-cache ffmpeg
-
-# Copia o yt-dlp do estágio de build
-COPY --from=builder /usr/local/bin/yt-dlp /usr/local/bin/yt-dlp
-
-WORKDIR /app
-# Adicione a instrução de execução do seu sidecar aqui
-CMD ["python", "main.py"]
+# Estágio final ultraleve (~20MB)
+FROM alpine:3.19
+RUN apk add --no-cache ffmpeg ca-certificates tzdata
+COPY --from=build /sidecar /usr/local/bin/sidecar
+EXPOSE 9800
+CMD ["sidecar"]
