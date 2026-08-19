@@ -22,7 +22,7 @@ RUN printf 'server {\n\
     client_max_body_size 150m;\n\
 \n\
     location /api {\n\
-        proxy_pass http://ts6-backend:3001;\n\
+        proxy_pass http://backend:3001;\n\
         proxy_http_version 1.1;\n\
         proxy_set_header Upgrade $http_upgrade;\n\
         proxy_set_header Connection "upgrade";\n\
@@ -33,7 +33,7 @@ RUN printf 'server {\n\
     }\n\
 \n\
     location /ws {\n\
-        proxy_pass http://ts6-backend:3001;\n\
+        proxy_pass http://backend:3001;\n\
         proxy_http_version 1.1;\n\
         proxy_set_header Upgrade $http_upgrade;\n\
         proxy_set_header Connection "upgrade";\n\
