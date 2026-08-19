@@ -2,6 +2,7 @@
 FROM node:20-slim AS base
 RUN corepack enable && corepack prepare pnpm@9 --activate
 
+# Install system deps: openssl (Prisma), ffmpeg (audio), python3+pip (yt-dlp)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       openssl \
@@ -15,21 +16,29 @@ RUN apt-get update && \
 
 WORKDIR /app
 
+# Copy everything at once to avoid BuildKit ordering bug on Windows
 FROM base AS build
 COPY . .
-
-ENV DATABASE_URL="file:/app/packages/backend/data/ts6webui.db"
-
 RUN pnpm install --no-frozen-lockfile
 RUN pnpm --filter @ts6/common run build
-RUN npx prisma generate --schema=packages/backend/prisma/schema.prisma
+RUN pnpm --filter @ts6/backend exec prisma generate
 RUN pnpm --filter @ts6/backend run build
 
+# Production image
 FROM base AS production
 ENV NODE_ENV=production
 WORKDIR /app
 
-COPY --from=build /app /app
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/package.json ./package.json
+COPY --from=build /app/pnpm-workspace.yaml ./pnpm-workspace.yaml
+COPY --from=build /app/packages/common/dist ./packages/common/dist
+COPY --from=build /app/packages/common/package.json ./packages/common/package.json
+COPY --from=build /app/packages/backend/dist ./packages/backend/dist
+COPY --from=build /app/packages/backend/generated ./packages/backend/generated
+COPY --from=build /app/packages/backend/prisma ./packages/backend/prisma
+COPY --from=build /app/packages/backend/package.json ./packages/backend/package.json
+COPY --from=build /app/packages/backend/node_modules ./packages/backend/node_modules
 
 WORKDIR /app/packages/backend
 RUN mkdir -p data /data/music && \
@@ -38,5 +47,4 @@ RUN mkdir -p data /data/music && \
 
 EXPOSE 3001
 ENV SIDECAR_URL=http://ts6-sidecar:9800
-
-CMD ["sh", "-c", "npx prisma db push --skip-generate --schema=prisma/schema.prisma && npx prisma db seed --schema=prisma/schema.prisma || true && node dist/index.js"]
+CMD ["sh", "-c", "npx prisma db push --skip-generate && npx prisma db seed || true && node dist/index.js"]
